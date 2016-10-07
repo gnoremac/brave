@@ -24,15 +24,43 @@ public final class InheritableServerClientAndLocalSpanState implements ServerCli
                 protected ServerSpan initialValue() {
                     return ServerSpan.EMPTY;
                 }
+                @Override
+                protected ServerSpan childValue(ServerSpan parent) {
+                    if (parent.getSpan() == null) {
+                        return parent;
+                    }
+                    return ServerSpan.create(
+                            InheritableServerClientAndLocalSpanState.clone(parent.getSpan()),
+                            parent.getSample());
+                }
             };
 
-    private final InheritableThreadLocal<Span> currentClientSpan = new InheritableThreadLocal<Span>();
+    private final InheritableThreadLocal<Span> currentClientSpan = new InheritableThreadLocal<Span>() {
+        @Override
+        protected Span childValue(Span parent) {
+            if (parent == null) {
+                return parent;
+            }
+            return InheritableServerClientAndLocalSpanState.clone(parent);
+        }
+    };
 
     private final InheritableThreadLocal<Deque<Span>> currentLocalSpan =
             new InheritableThreadLocal<Deque<Span>>() {
                 @Override
                 protected Deque<Span> initialValue() {
                     return new LinkedBlockingDeque<Span>();
+                }
+                @Override
+                protected Deque<Span> childValue(Deque<Span> parentValue) {
+                    if (parentValue.size() <= 0) {
+                        return parentValue;
+                    }
+                    Deque<Span> answer = new LinkedBlockingDeque<Span>();
+                    for (Span parent : parentValue) {
+                        answer.add(InheritableServerClientAndLocalSpanState.clone(parent));
+                    }
+                    return answer;
                 }
             };
 
@@ -110,4 +138,20 @@ public final class InheritableServerClientAndLocalSpanState implements ServerCli
                 + "currentServerSpan=" + currentServerSpan
                 + "}";
     }
+
+    static Span clone(Span original) {
+        Span clone = new Span();
+        clone.setId(original.getId());
+        clone.setName(original.getName());
+        clone.setTrace_id(original.getTrace_id());
+        clone.setParent_id(original.getParent_id());
+        clone.setTimestamp(original.getTimestamp());
+        clone.setDebug(original.isDebug());
+        clone.setDuration(original.getDuration());
+        // Annotations are immutable
+        clone.setAnnotations(original.getAnnotations());
+        clone.setBinaryAnnotations(original.getBinary_annotations());
+        return clone;
+    }
+
 }
